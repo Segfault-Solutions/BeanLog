@@ -62,14 +62,8 @@ public:
                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
                                      std::vformat(fmt, std::make_format_args(args...)))
                       << std::endl;
-
-            /* Prints an error message from the system if one is available. */
-            if ((_tmpError = GetLastError()) != 0 && _tmpError != _lastError)
-            {
-                _PrintSystemError(_tmpError);
-                _lastError = _tmpError;
-            }
         }
+        _PrintSystemError();
     }
 
     /* Prints the properly formatted unicode debug message from the application. */
@@ -83,14 +77,8 @@ public:
                                       std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
                                       std::vformat(fmt, std::make_wformat_args(args...)))
                        << std::endl;
-
-            /* Prints an error message from the system if one is available. */
-            if ((_tmpError = GetLastError()) != 0 && _tmpError != _lastError)
-            {
-                _PrintSystemError(_tmpError);
-                _lastError = _tmpError;
-            }
         }
+        _PrintSystemError();
     }
 
     static BeanLog& GetInstance(void)
@@ -100,21 +88,44 @@ public:
     }
 
 private:
-    /* Translates the last error to text and print it to the console. */
-    void __inline _PrintSystemError(DWORD lastError)
+    /* Translates the last error to text if one is available and prints it to the console. */
+    void __inline _PrintSystemError(void)
     {
-        DWORD status = 0;
+        DWORD currentError = GetLastError();
+        if (currentError == 0 || currentError == _lastError)
+        {
+            return;
+        }
+
+        _lastError = currentError;
+        if (_logLevel < BeanLogLevel::warn)
+        {
+            SetConsoleTextAttribute(_outHandle, _colors[BeanLogLevel::warn]);
+        }
+        
+        DWORD nFormattedTchars = 0;
         wchar_t* osMessage = nullptr;
 
-        status = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                                nullptr, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (wchar_t*) &osMessage, 0,
-                                nullptr);
+        nFormattedTchars = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                          nullptr, _lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (wchar_t*) &osMessage, 0,
+                                          nullptr);
 
-        std::wcout << std::format(L"[SYS] [{}]: {}",
-                                  std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
-                                  osMessage);
-
-        LocalFree(osMessage);
+        if (nFormattedTchars == 0)
+        {
+            SetConsoleTextAttribute(_outHandle, _colors[BeanLogLevel::fail]);
+            std::wcout << std::format(L"[LOG] [{}]: `FormatMessage` failed with error code {}.",
+                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
+                                      GetLastError());
+            SetLastError(0);
+            return;
+        }
+        else
+        {
+            std::wcout << std::format(L"[SYS] [{}]: {}",
+                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
+                                      osMessage);
+            LocalFree(osMessage);
+        }
     }
 
 protected:
