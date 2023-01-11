@@ -3,7 +3,7 @@
 
     Copyright (C) 2023 GRX78FL (at) Segfault Solutions
     <https://github.com/GRX78FL>
-    <https://github.com/Segfault-Solutions>
+    <https://github.com/SegfaultSolutions>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
