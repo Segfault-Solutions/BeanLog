@@ -34,6 +34,7 @@
 #include <chrono>
 #include <format>
 #include <iostream>
+#include <mutex>
 
 enum BeanLogLevel
 {
@@ -48,13 +49,16 @@ class BeanLog
 public:
     void SetLogLevel(BeanLogLevel lvl)
     {
+        _mutex.lock();
         _logLevel = lvl;
+        _mutex.unlock();
     }
 
     /* Prints the properly formatted ansi debug message from the application. */
     template <typename... VA_ARGS>
     void LogA(BeanLogLevel lvl, const std::string_view& fmt, VA_ARGS&&... args)
     {
+        _mutex.lock();
         if (lvl >= _logLevel && lvl >= 0 && lvl <= fail)
         {
             SetConsoleTextAttribute(_outHandle, _colors[lvl]);
@@ -64,12 +68,14 @@ public:
                       << std::endl;
         }
         _PrintSystemError();
+        _mutex.unlock();
     }
 
     /* Prints the properly formatted unicode debug message from the application. */
     template <typename... VA_ARGS>
     void LogW(BeanLogLevel lvl, const std::wstring_view& fmt, VA_ARGS&&... args)
     {
+        _mutex.lock();
         if (lvl >= _logLevel && lvl >= 0 && lvl <= fail)
         {
             SetConsoleTextAttribute(_outHandle, _colors[lvl]);
@@ -79,6 +85,7 @@ public:
                        << std::endl;
         }
         _PrintSystemError();
+        _mutex.unlock();
     }
 
     static BeanLog& GetInstance(void)
@@ -197,6 +204,7 @@ private:
                       /* bright green */ FOREGROUND_GREEN | FOREGROUND_INTENSITY,
                       /* bright yellow */ FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_INTENSITY,
                       /* bright red */ FOREGROUND_RED | FOREGROUND_INTENSITY};
+    std::mutex _mutex;
 };
 
 /* Maximizing ease of use as Singletons aren't exactly 'pretty'. */
