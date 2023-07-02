@@ -230,3 +230,19 @@ private:
 #define bean_fail_w(FORMAT_STRING, ...)
 
 #endif
+
+#ifdef UNICODE
+
+#define bean_trace bean_trace_w
+#define bean_info bean_info_w
+#define bean_warn bean_warn_w
+#define bean_fail bean_fail_w
+
+#elif
+
+#define bean_trace bean_trace_a
+#define bean_info bean_info_a
+#define bean_warn bean_warn_a
+#define bean_fail bean_fail_a
+
+#endif 
