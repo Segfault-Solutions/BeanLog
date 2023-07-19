@@ -1,22 +1,9 @@
 /*
-    BeanLog is a minimal logging library for graphical applications.
-
-    Copyright (C) 2023 GRX78FL (at) Segfault Solutions
+    Copyright (C) 2023 GRX78FL (at) Segfault Solutions - MIT License.
     <https://github.com/GRX78FL>
     <https://github.com/SegfaultSolutions>
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+    BeanLog is a minimal logging library for graphical applications.
  */
 
 #pragma once
@@ -41,126 +28,134 @@ enum BeanLogLevel
     trace,
     info,
     warn,
-    fail
+    fail,
+    max
 };
 
 class BeanLog
 {
 public:
-    void SetLogLevel(BeanLogLevel lvl)
-    {
-        _mutex.lock();
-        _logLevel = lvl;
-        _mutex.unlock();
-    }
-
-    /* Prints the properly formatted ansi debug message from the application. */
-    template <typename... VA_ARGS>
-    void LogA(BeanLogLevel lvl, const std::string_view& fmt, VA_ARGS&&... args)
-    {
-        _mutex.lock();
-        if (lvl >= _logLevel && lvl >= 0 && lvl <= fail)
-        {
-            SetConsoleTextAttribute(_outHandle, _colors[lvl]);
-            std::cout << std::format("[APP] [{}]: {}.",
-                                     std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
-                                     std::vformat(fmt, std::make_format_args(args...)))
-                      << std::endl;
-        }
-        _PrintSystemError();
-        _mutex.unlock();
-    }
-
-    /* Prints the properly formatted unicode debug message from the application. */
-    template <typename... VA_ARGS>
-    void LogW(BeanLogLevel lvl, const std::wstring_view& fmt, VA_ARGS&&... args)
-    {
-        _mutex.lock();
-        if (lvl >= _logLevel && lvl >= 0 && lvl <= fail)
-        {
-            SetConsoleTextAttribute(_outHandle, _colors[lvl]);
-            std::wcout << std::format(L"[APP] [{}]: {}.",
-                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
-                                      std::vformat(fmt, std::make_wformat_args(args...)))
-                       << std::endl;
-        }
-        _PrintSystemError();
-        _mutex.unlock();
-    }
-
     static BeanLog& GetInstance(void)
     {
         static BeanLog Logger;
         return Logger;
     }
 
-private:
-    /* Translates the last error to text if one is available and prints it to the console. */
-    void __inline _PrintSystemError(void)
+    void SetLogLevel(BeanLogLevel lvl)
     {
-        DWORD currentError = GetLastError();
-        if (currentError == 0 || currentError == _lastError)
-        {
-            return;
-        }
+        std::lock_guard<std::mutex> lock(_mutex);
+        _logLevel = lvl;
+    }
 
-        _lastError = currentError;
-        if (_logLevel < BeanLogLevel::warn)
-        {
-            SetConsoleTextAttribute(_outHandle, _colors[BeanLogLevel::warn]);
-        }
-        
-        DWORD nFormattedTchars = 0;
-        wchar_t* osMessage = nullptr;
+    template <typename... ARGS>
+    void Log(BeanLogLevel lvl, DWORD syserr, const wchar_t* fmt, ARGS... args)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
 
-        nFormattedTchars = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                                          nullptr, _lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (wchar_t*) &osMessage, 0,
-                                          nullptr);
-
-        if (nFormattedTchars == 0)
+        // Make sure to filter messages based on severity
+        if (lvl < _logLevel)
         {
-            SetConsoleTextAttribute(_outHandle, _colors[BeanLogLevel::fail]);
-            std::wcout << std::format(L"[LOG] [{}]: `FormatMessage` failed with error code {}.",
-                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
-                                      GetLastError());
             SetLastError(0);
             return;
         }
-        else
+
+        // Select the correct color for the output
+        switch (lvl)
         {
-            std::wcout << std::format(L"[SYS] [{}]: {}",
-                                      std::chrono::zoned_time{std::chrono::current_zone(), _sysClock.now()}.get_local_time(),
-                                      osMessage);
-            LocalFree(osMessage);
+            default:
+            case BeanLogLevel::trace:
+            {
+                _color1 = L"\x1B[30;107m";
+                _color2 = L"\x1B[0;97m ";
+                break;
+            }
+            case BeanLogLevel::info:
+            {
+                _color1 = L"\x1B[30;102m";
+                _color2 = L"\x1B[0;92m ";
+                break;
+            }
+            case BeanLogLevel::warn:
+            {
+                _color1 = L"\x1B[30;103m";
+                _color2 = L"\x1B[0;93m ";
+                break;
+            }
+            case BeanLogLevel::fail:
+            {
+                _color1 = L"\x1B[30;101m";
+                _color2 = L"\x1B[0;91m ";
+                break;
+            }
         }
+
+        // Format application message
+        std::wcout << _color1
+                   << std::format(L"[APP] [{}]:", _GetTime())
+                   << _color2
+                   << std::vformat(fmt, std::make_wformat_args(std::forward<ARGS>(args)...))
+                   << L"\x1B[0m" << std::endl;
+
+        // Format system error
+        if (syserr)
+        {
+            std::wcout << _color1
+                       << std::format(L"[SYS] [{}]:", _GetTime())
+                       << _color2
+                       << std::error_code(syserr, std::system_category()).message().c_str()
+                       << L"\x1B[0m" << std::endl;
+            SetLastError(0);
+        }
+    }
+
+private:
+    std::chrono::local_time<std::chrono::system_clock::duration> _GetTime(void)
+    {
+        return std::chrono::zoned_time{std::chrono::current_zone(), std::chrono::system_clock::now()}.get_local_time();
     }
 
 protected:
     /* Allocates a console, opens stdout and enables colored output. */
     BeanLog()
     {
-        _isConsoleAllocated = AllocConsole();
-        if (!_isConsoleAllocated)
+        // Check if there's a console already attached to the current process
+        if ((_outHandle = GetStdHandle(STD_OUTPUT_HANDLE)) == nullptr)
         {
-            MessageBoxW(nullptr, L"Failed to allocate a console.", L"BeanLog::BeanLog", MB_ICONERROR | MB_OK);
+            _isConsoleAllocated = AllocConsole();
+            if (!_isConsoleAllocated)
+            {
+                MessageBoxW(nullptr, L"Failed to allocate a console.", L"BeanLog::BeanLog", MB_ICONERROR | MB_OK);
+                return;
+            }
+
+            freopen_s(&_fConOut, "CONOUT$", "w", stdout);
+            if (!_fConOut)
+            {
+                MessageBoxW(nullptr, L"Failed to reopen STDOUT.", L"BeanLog::BeanLog", MB_ICONERROR | MB_OK);
+                return;
+            }
+            else
+            {
+                _isStdoutOpen = true;
+            }
+
+            _outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (_outHandle == INVALID_HANDLE_VALUE)
+            {
+                MessageBoxW(nullptr, L"Failed to get STD_OUTPUT_HANDLE.\nOutput won't be colored.", L"BeanLog::BeanLog", MB_ICONWARNING | MB_OK);
+                return;
+            }
+        }
+
+        if (!GetConsoleMode(_outHandle, &_mode))
+        {
+            MessageBoxW(nullptr, L"Failed to get the console mode.\nOutput won't be colored.", L"BeanLog::BeanLog", MB_ICONWARNING | MB_OK);
             return;
         }
 
-        freopen_s(&_fConOut, "CONOUT$", "w", stdout);
-        if (!_fConOut)
+        if (!SetConsoleMode(_outHandle, _mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
         {
-            MessageBoxW(nullptr, L"Failed to reopen STDOUT.", L"BeanLog::BeanLog", MB_ICONERROR | MB_OK);
-            return;
-        }
-        else
-        {
-            _isStdoutOpen = true;
-        }
-
-        _outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-        if (_outHandle == INVALID_HANDLE_VALUE)
-        {
-            MessageBoxW(nullptr, L"Failed to get STD_OUTPUT_HANDLE.\nOutput won't be colored.", L"BeanLog::BeanLog", MB_ICONWARNING | MB_OK);
+            MessageBoxW(nullptr, L"Failed to set the console mode.\nOutput won't be colored.", L"BeanLog::BeanLog", MB_ICONWARNING | MB_OK);
             return;
         }
     }
@@ -168,6 +163,10 @@ protected:
     /* Deallocates the console and closes stdout. */
     ~BeanLog()
     {
+        // Restore the changes made in order to display colors, useful if the current process is a console application
+        SetConsoleMode(_outHandle, _mode);
+
+        // Only close stdout if BeanLog opened it
         if (_isStdoutOpen)
         {
             if (fclose(_fConOut) == EOF)
@@ -176,6 +175,7 @@ protected:
             }
         }
 
+        // Only free the console if BeanLog allocated it
         if (_isConsoleAllocated)
         {
             if (!FreeConsole())
@@ -193,31 +193,23 @@ public:
 
 private:
     int _logLevel = BeanLogLevel::trace;
-    DWORD _lastError = 0;
-    DWORD _tmpError = 0;
     bool _isConsoleAllocated = false;
     bool _isStdoutOpen = false;
     FILE* _fConOut = nullptr;
-    std::chrono::system_clock _sysClock;
     HANDLE _outHandle = INVALID_HANDLE_VALUE;
-    int _colors[4] = {/* dim white */ FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
-                      /* bright green */ FOREGROUND_GREEN | FOREGROUND_INTENSITY,
-                      /* bright yellow */ FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_INTENSITY,
-                      /* bright red */ FOREGROUND_RED | FOREGROUND_INTENSITY};
     std::mutex _mutex;
+    const wchar_t* _color1 = nullptr;
+    const wchar_t* _color2 = nullptr;
+    DWORD _mode{};
 };
 
 /* Maximizing ease of use as Singletons aren't exactly 'pretty'. */
 
 #define bean_set_loglevel(LOG_LEVEL) BeanLog::GetInstance().SetLogLevel(LOG_LEVEL)
-#define bean_trace_a(FORMAT_STRING, ...) BeanLog::GetInstance().LogA(BeanLogLevel::trace, FORMAT_STRING, __VA_ARGS__)
-#define bean_info_a(FORMAT_STRING, ...) BeanLog::GetInstance().LogA(BeanLogLevel::info, FORMAT_STRING, __VA_ARGS__)
-#define bean_warn_a(FORMAT_STRING, ...) BeanLog::GetInstance().LogA(BeanLogLevel::warn, FORMAT_STRING, __VA_ARGS__)
-#define bean_fail_a(FORMAT_STRING, ...) BeanLog::GetInstance().LogA(BeanLogLevel::fail, FORMAT_STRING, __VA_ARGS__)
-#define bean_trace_w(FORMAT_STRING, ...) BeanLog::GetInstance().LogW(BeanLogLevel::trace, FORMAT_STRING, __VA_ARGS__)
-#define bean_info_w(FORMAT_STRING, ...) BeanLog::GetInstance().LogW(BeanLogLevel::info, FORMAT_STRING, __VA_ARGS__)
-#define bean_warn_w(FORMAT_STRING, ...) BeanLog::GetInstance().LogW(BeanLogLevel::warn, FORMAT_STRING, __VA_ARGS__)
-#define bean_fail_w(FORMAT_STRING, ...) BeanLog::GetInstance().LogW(BeanLogLevel::fail, FORMAT_STRING, __VA_ARGS__)
+#define bean_trace(FORMAT_STRING, ...) BeanLog::GetInstance().Log(BeanLogLevel::trace, GetLastError(), FORMAT_STRING, __VA_ARGS__)
+#define bean_info(FORMAT_STRING, ...) BeanLog::GetInstance().Log(BeanLogLevel::info, GetLastError(), FORMAT_STRING, __VA_ARGS__)
+#define bean_warn(FORMAT_STRING, ...) BeanLog::GetInstance().Log(BeanLogLevel::warn, GetLastError(), FORMAT_STRING, __VA_ARGS__)
+#define bean_fail(FORMAT_STRING, ...) BeanLog::GetInstance().Log(BeanLogLevel::fail, GetLastError(), FORMAT_STRING, __VA_ARGS__)
 
 #elif NDEBUG
 
@@ -228,29 +220,9 @@ private:
 */
 
 #define bean_set_loglevel(LOG_LEVEL)
-#define bean_trace_a(FORMAT_STRING, ...)
-#define bean_info_a(FORMAT_STRING, ...)
-#define bean_warn_a(FORMAT_STRING, ...)
-#define bean_fail_a(FORMAT_STRING, ...)
-#define bean_trace_w(FORMAT_STRING, ...)
-#define bean_info_w(FORMAT_STRING, ...)
-#define bean_warn_w(FORMAT_STRING, ...)
-#define bean_fail_w(FORMAT_STRING, ...)
+#define bean_trace(FORMAT_STRING, ...)
+#define bean_info(FORMAT_STRING, ...)
+#define bean_warn(FORMAT_STRING, ...)
+#define bean_fail(FORMAT_STRING, ...)
 
 #endif
-
-#ifdef UNICODE
-
-#define bean_trace bean_trace_w
-#define bean_info bean_info_w
-#define bean_warn bean_warn_w
-#define bean_fail bean_fail_w
-
-#elif
-
-#define bean_trace bean_trace_a
-#define bean_info bean_info_a
-#define bean_warn bean_warn_a
-#define bean_fail bean_fail_a
-
-#endif 

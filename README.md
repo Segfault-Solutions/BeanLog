@@ -28,15 +28,11 @@ int wWinMain(
         looks like so:
     */
     
-    bean_trace_a("one {}", 1);
-    bean_info_a("one {}, two {}", 1, 'B');
-    
-    /*
-        As per Win32 tradition, there's a char and wchar version of each logging macro:
-    */
-    
-    bean_warn_w(L"one {}, two {}, three {}", 1, 'B', 3);
-    bean_fail_w(L"one {}, two {}, three {}, {}", 1, 'B', 3, L"four");
+    bean_trace(L"one {}", 1);
+    bean_info(L"one {}, two {}", 1, 'B');   
+    bean_warn(L"one {}, two {}, three {}", 1, 'B', 3);
+    bean_fail(L"one {}, two {}, three {}, {}", 1, 'B', 3, L"four");
+    bean_info(L"none");
     
     /*
         When an error occurs and Win32 calls `SetLastError` to notify your application
@@ -47,7 +43,7 @@ int wWinMain(
     
     if (!GetProcessId(0))
     {
-        bean_fail_a("{}", "something happened");
+        bean_fail("Something went wrong!");
     }
     return EXIT_SUCCESS;
 }
@@ -55,4 +51,4 @@ int wWinMain(
 
 Here's what the sample program above will output in DEBUG mode (only!):
 
-![image](https://user-images.githubusercontent.com/20095224/210196381-ce5c7df5-a625-4eed-9fb2-e5db9cde94f3.png)
+![image](https://github.com/GRX78FL/libdit/assets/20095224/42ee0263-2b5a-49cc-b00e-c28739cc684c)
